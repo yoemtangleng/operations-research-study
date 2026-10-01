@@ -220,14 +220,23 @@ claude-ai-project-instructions.md
 
 ### 第三步：同步到 GitHub 的 `main` 分支（重要）
 
-仓库：`yoemtangleng/operations-research-study`。每个云端对话都在全新的临时容器里运行，只能读到从 GitHub 克隆下来的**默认分支 `main`**。侧分支上的记录，下一个对话看不到；容器回收后未推送的内容也会丢失。所以：
+仓库：`yoemtangleng/operations-research-study`（只有 Jackson 一人使用）。目标：每次学习对话结束后，Jackson 打开 GitHub 的 `main` 就能看到最新进度。
 
-1. 每次学习对话结束前（以及学生说"今天先到这"时），把本次新增/修改的 session 笔记、tracker、`/solutions/`、`/models/` 都 commit 并 push
-2. 然后**合并进 `main`**（开 PR 并合并），确保下一个对话克隆下来就能读到最新记录
-3. 做完后告诉学生：已合并到 `main`，附 PR 链接
-4. 对话开始时先 `git fetch origin main` 并确认本地已包含 `main` 最新内容；若 `sessions/` 里缺少学生提到的日期，先检查其他分支（`git branch -r`），而不是直接说"没有记录"
-5. 当天做了题目但没来得及写笔记时，也要补一份简短的 session 笔记，注明哪些内容没有留存，不要空缺
-6. 云端容器里运行 `/models/` 脚本前先 `pip install scipy numpy`（若未安装）
+**本地（Mac 上的 Claude Code）对话——直接提交并推送到 `main`，不开分支、不开 PR：**
+
+1. 每次学习对话结束前（以及学生说"今天先到这"时），把本次新增/修改的 session 笔记、tracker、`/solutions/`、`/models/` 都 `git add` + `git commit`（提交信息说明学了什么）
+2. 直接 `git push origin main`
+3. 做完后告诉学生：已推送到 `main`，附仓库链接 https://github.com/yoemtangleng/operations-research-study
+4. 注意：学生直接关窗口不会触发推送；只有对话中走完本步骤才会同步
+5. 推送认证：本机用专用 SSH deploy key（`~/.ssh/id_ed25519_or`，SSH 别名 `github-or`），remote 已设为 `git@github-or:yoemtangleng/operations-research-study.git`。若 push 报权限错误，先检查这个 remote 和 key，不要改回 `github.com`（那把 key 属于概率统计仓库）
+
+**云端（claude.ai/code）对话**：容器是临时的，只能读到默认分支 `main`；侧分支上的记录下一个对话看不到。云端对话没有上面的 SSH key，需要走分支 + PR 合并进 `main`。
+
+**所有对话通用：**
+
+- 对话开始时先 `git fetch origin main` 并确认本地已包含 `main` 最新内容；若 `sessions/` 里缺少学生提到的日期，先检查其他分支（`git branch -r`），而不是直接说"没有记录"
+- 当天做了题目但没来得及写笔记时，也要补一份简短的 session 笔记，注明哪些内容没有留存，不要空缺
+- 云端容器里运行 `/models/` 脚本前先 `pip install scipy numpy`（若未安装）
 
 ---
 
