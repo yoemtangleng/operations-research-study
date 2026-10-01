@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>单纯形表交互示例 · 例1</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<style>
+:root{
+  --bg:#fbfaf7;--card:#ffffff;--ink:#1f2328;--muted:#5d6670;--line:#d9dde3;
+  --accent:#2f6fde;--accent-soft:#e7efff;--pivot:#d9480f;--pivot-soft:#fff0e6;
+  --good:#1e7a46;--good-soft:#e5f5ec;--warn:#9a6700;--warn-soft:#fff6db;
+}
+@media (prefers-color-scheme: dark){
+  :root{--bg:#15171a;--card:#1d2024;--ink:#e6e8eb;--muted:#9aa3ad;--line:#33383f;
+  --accent:#7aa7ff;--accent-soft:#1d2a44;--pivot:#ff8a4c;--pivot-soft:#3a2418;
+  --good:#5fd08f;--good-soft:#173324;--warn:#e6b84a;--warn-soft:#352b12;}
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.65 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
+.wrap{max-width:980px;margin:0 auto;padding:24px 16px 64px}
+h1{font-size:1.45rem;margin:0 0 4px}
+.sub{color:var(--muted);margin:0 0 20px;font-size:.92rem}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:16px}
+.card h2{font-size:1.05rem;margin:0 0 10px}
+.grid{display:grid;grid-template-columns:1fr 300px;gap:16px}
+@media (max-width:820px){.grid{grid-template-columns:1fr}}
+.tbl-wrap{overflow-x:auto}
+table.tab{border-collapse:collapse;margin:6px 0;min-width:560px;width:100%;text-align:center}
+.tab td,.tab th{border:1px solid var(--line);padding:6px 8px;font-weight:400}
+.tab .hdr{background:var(--accent-soft)}
+.tab .sig td{border-top:2px solid var(--ink)}
+.tab .col-hi{background:var(--accent-soft)}
+.tab .row-hi{background:var(--warn-soft)}
+.tab .pivot{background:var(--pivot-soft);color:var(--pivot);font-weight:700;outline:2px solid var(--pivot);outline-offset:-2px}
+.tab .pos{color:var(--good);font-weight:600}
+.controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
+button{font:inherit;padding:7px 14px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button:disabled{opacity:.45;cursor:default}
+.stepinfo{color:var(--muted);font-size:.9rem;margin-left:auto}
+.explain{border-left:3px solid var(--accent);padding:8px 12px;background:var(--accent-soft);border-radius:0 8px 8px 0;margin-top:12px}
+.explain.final{border-color:var(--good);background:var(--good-soft)}
+.ask{margin-top:10px;padding:8px 12px;border:1px dashed var(--warn);border-radius:8px;background:var(--warn-soft)}
+.ask summary{cursor:pointer;color:var(--warn);font-weight:600}
+.answer-box{border:2px solid var(--good);border-radius:10px;padding:10px 14px;margin-top:10px;display:inline-block}
+svg text{fill:var(--muted);font-size:11px}
+.legend{font-size:.85rem;color:var(--muted);margin-top:6px}
+.model{overflow-x:auto}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>单纯形表交互示例：第一章 例1（机床加工）</h1>
+  <p class="sub">来源：课件第1节 例1 ／ 第3–4节单纯形法 · 表头格式与课件一致 · 点击「下一步」逐步推进，每一步先自己想，再展开答案</p>
+
+  <div class="card">
+    <h2>模型与标准形</h2>
+    <div class="model" id="model"></div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2 id="tabTitle">单纯形表</h2>
+      <div class="tbl-wrap" id="tableArea"></div>
+      <div class="controls">
+        <button id="prev">上一步</button>
+        <button id="next" class="primary">下一步</button>
+        <button id="reset">重来</button>
+        <span class="stepinfo" id="stepInfo"></span>
+      </div>
+      <div id="explain"></div>
+    </div>
+    <div class="card">
+      <h2>几何上走到了哪个顶点</h2>
+      <svg id="plot" viewBox="0 0 280 280" width="100%"></svg>
+      <div class="legend">蓝色区域 = 可行域；橙点 = 当前基可行解（顶点）；虚线 = 已走过的路径</div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============ 题目数据（换题时只改这里；目前支持 max + 全部 ≤ 约束） ============ */
+const PROBLEM = {
+  sense: "max",
+  c: [2, 3],
+  A: [[1, 2], [4, 0], [0, 4]],
+  b: [8, 16, 12],
+  notes: ["设备台时约束", "银锭用量约束", "金锭用量约束"],
+  plotMax: 9
+};
+
+/* ============ 分数运算 ============ */
+function gcd(a,b){a=Math.abs(a);b=Math.abs(b);while(b){[a,b]=[b,a%b]}return a||1}
+class F{constructor(n,d=1){if(d<0){n=-n;d=-d}const g=gcd(n,d);this.n=n/g;this.d=d/g}
+  add(o){return new F(this.n*o.d+o.n*this.d,this.d*o.d)} sub(o){return new F(this.n*o.d-o.n*this.d,this.d*o.d)}
+  mul(o){return new F(this.n*o.n,this.d*o.d)} div(o){return new F(this.n*o.d,this.d*o.n)}
+  cmp(o){return this.n*o.d-o.n*this.d} sign(){return Math.sign(this.n)} val(){return this.n/this.d}
+  tex(){if(this.d===1)return String(this.n);return (this.n<0?"-":"")+"\\tfrac{"+Math.abs(this.n)+"}{"+this.d+"}"}
+  str(){return this.d===1?String(this.n):this.n+"/"+this.d}}
+const f=x=>new F(x);
+
+/* ============ 构造标准形与全部迭代 ============ */
+const m=PROBLEM.b.length,nx=PROBLEM.c.length,n=nx+m;
+const names=[...Array(n)].map((_,j)=>`x_{${j+1}}`);
+const cj=[...PROBLEM.c.map(f),...Array(m).fill(0).map(f)];
+let T=PROBLEM.A.map((row,i)=>[...row.map(f),...Array(m).fill(0).map((_,k)=>f(k===i?1:0))]);
+let B=PROBLEM.b.map(f);
+let basis=[...Array(m)].map((_,i)=>nx+i);
+
+function sigmas(T,basis){return cj.map((c,j)=>{let z=f(0);for(let i=0;i<m;i++)z=z.add(cj[basis[i]].mul(T[i][j]));return c.sub(z)})}
+function zval(B,basis){let z=f(0);for(let i=0;i<m;i++)z=z.add(cj[basis[i]].mul(B[i]));return z}
+function clone(){return {T:T.map(r=>r.slice()),B:B.slice(),basis:basis.slice()}}
+
+const tables=[];
+for(let it=0;it<20;it++){
+  const s=sigmas(T,basis);
+  let k=-1;s.forEach((v,j)=>{if(!basis.includes(j)&&v.sign()>0&&(k<0||v.cmp(s[k])>0))k=j});
+  const snap={...clone(),sig:s,z:zval(B,basis),enter:k,leave:-1,theta:[]};
+  if(k<0){snap.optimal=true;tables.push(snap);break}
+  let l=-1;
+  snap.theta=T.map((r,i)=>r[k].sign()>0?B[i].div(r[k]):null);
+  snap.theta.forEach((t,i)=>{if(t&&(l<0||t.cmp(snap.theta[l])<0))l=i});
+  if(l<0){snap.unbounded=true;tables.push(snap);break}
+  snap.leave=l;tables.push(snap);
+  const p=T[l][k];
+  T[l]=T[l].map(v=>v.div(p));B[l]=B[l].div(p);
+  for(let i=0;i<m;i++)if(i!==l){const r=T[i][k];T[i]=T[i].map((v,j)=>v.sub(r.mul(T[l][j])));B[i]=B[i].sub(r.mul(B[l]))}
+  basis[l]=k;
+}
+
+/* ============ 步骤序列：每张表分 4 个子步骤 ============ */
+const steps=[];
+tables.forEach((t,ti)=>{
+  steps.push({ti,phase:"table"});
+  steps.push({ti,phase:"sigma"});
+  if(!t.optimal&&!t.unbounded){steps.push({ti,phase:"enter"});steps.push({ti,phase:"theta"})}
+});
+
+/* ============ 渲染 ============ */
+const K=(s,d=false)=>katex.renderToString(s,{throwOnError:false,displayMode:d});
+function xval(t){const x=Array(n).fill(f(0));t.basis.forEach((j,i)=>x[j]=t.B[i]);return x}
+
+function renderModel(){
+  const obj=PROBLEM.c.map((c,j)=>`${j&&c>=0?"+":""}${c}x_{${j+1}}`).join("");
+  const cons=PROBLEM.A.map((r,i)=>r.map((a,j)=>a===0?"":`${a>=0&&r.slice(0,j).some(v=>v!==0)?"+":""}${a===1?"":a}x_{${j+1}}`).join("")+`\\le ${PROBLEM.b[i]}&\\text{（${PROBLEM.notes[i]}）}`).join("\\\\");
+  const std=PROBLEM.A.map((r,i)=>r.map((a,j)=>a===0?"":`${a>=0&&r.slice(0,j).some(v=>v!==0)?"+":""}${a===1?"":a}x_{${j+1}}`).join("")+`+x_{${nx+i+1}}=${PROBLEM.b[i]}`).join("\\\\");
+  document.getElementById("model").innerHTML=
+    K(`\\max z=${obj}\\quad\\text{s.t.}\\ \\begin{cases}${cons}\\\\x_1,x_2\\ge0\\end{cases}`,true)+
+    `<p>加松弛变量 ${K("x_3,x_4,x_5")} 化为标准形，它们的系数列刚好构成单位阵 → 直接作为初始基：</p>`+
+    K(`\\max z=${obj}+0x_3+0x_4+0x_5\\quad\\begin{cases}${std}\\\\x_j\\ge0\\end{cases}`,true);
+}
+
+function renderTable(t,phase){
+  const showSig=phase!=="table", showEnter=phase==="enter"||phase==="theta", showTheta=phase==="theta";
+  let h=`<table class="tab"><tr class="hdr"><td colspan="3">${K("c_j\\to")}</td>${cj.map(c=>`<td>${K(c.tex())}</td>`).join("")}<td rowspan="2">${K("\\theta_i")}</td></tr>`;
+  h+=`<tr class="hdr"><td>${K("\\mathbf{c_B}")}</td><td>${K("\\mathbf{x_B}")}</td><td>${K("\\mathbf b")}</td>${names.map((nm,j)=>`<td class="${showEnter&&j===t.enter?"col-hi":""}">${K(nm)}</td>`).join("")}</tr>`;
+  t.T.forEach((row,i)=>{
+    const rowHi=showTheta&&i===t.leave;
+    h+=`<tr class="${rowHi?"row-hi":""}"><td>${K(cj[t.basis[i]].tex())}</td><td>${K(names[t.basis[i]])}</td><td>${K(t.B[i].tex())}</td>`;
+    row.forEach((v,j)=>{const piv=showTheta&&i===t.leave&&j===t.enter;
+      h+=`<td class="${piv?"pivot":(showEnter&&j===t.enter?"col-hi":"")}">${K(piv?`[${v.tex()}]`:v.tex())}</td>`});
+    h+=`<td>${showTheta?(t.theta[i]?K(`${t.B[i].tex()}/${row[t.enter].tex()}=${t.theta[i].tex()}`):"—"):""}</td></tr>`;
+  });
+  h+=`<tr class="sig"><td colspan="3">${K("\\sigma_j=c_j-z_j")}</td>${t.sig.map((s,j)=>`<td class="${showSig&&s.sign()>0&&!t.basis.includes(j)?"pos":""}${showEnter&&j===t.enter?" col-hi":""}">${showSig?K(s.tex()):"?"}</td>`).join("")}<td></td></tr></table>`;
+  return h;
+}
+
+function explainFor(t,phase,ti){
+  const x=xval(t), xs=x.slice(0,nx).map(v=>v.tex()).join(",");
+  const nb=[...Array(n).keys()].filter(j=>!t.basis.includes(j));
+  if(phase==="table"){
+    const intro= ti===0?"初始单纯形表：基变量是松弛变量，令非基变量 = 0。"
+      :`以上一张表的主元做高斯消元后得到的新表（主元行除以主元；其他行（包括检验数行）把主元列消成 0；${K("\\mathbf{c_B}")}、${K("\\mathbf{x_B}")} 列也同步换掉）。`;
+    return `<div class="explain">${intro} 当前基可行解 ${K(`\\mathbf x=(${x.map(v=>v.tex()).join(",")})^{T}`)}，目标值 ${K(`z=\\mathbf{c_B}\\bar{\\mathbf b}=${t.z.tex()}`)}，对应图上的点 ${K(`(${xs})`)}。</div>
+      <details class="ask"><summary>先自检：这张表对不对？</summary>基变量 ${t.basis.map(j=>K(names[j])).join("、")} 的列是不是单位向量？${K("\\mathbf b")} 列是不是全部 ≥ 0？接下来自己算一遍检验数行，再点「下一步」核对。</details>`;
+  }
+  if(phase==="sigma"){
+    const j0=nb[0];
+    const terms=t.basis.map((bj,i)=>`${cj[bj].tex()}\\times${t.T[i][j0].sign()<0?'('+t.T[i][j0].tex()+')':t.T[i][j0].tex()}`).join("+");
+    let s=`<div class="explain">检验数 ${K("\\sigma_j=c_j-\\mathbf{c_B}\\mathbf{y}_j")}（基变量的检验数一定是 0）。例如 ${K(`\\sigma_{${j0+1}}=${cj[j0].tex()}-(${terms})=${t.sig[j0].tex()}`)}。`;
+    if(t.optimal){
+      const zero=nb.filter(j=>t.sig[j].sign()===0);
+      s+=` 所有非基变量检验数 ${K("\\le 0")} → <b>已达最优</b>。${zero.length?`注意非基变量 ${zero.map(j=>K(names[j])).join("、")} 的检验数 = 0 → 有无穷多最优解。`:"非基变量检验数全部严格 < 0 → 唯一最优解。"}</div>
+      <div class="explain final"><div class="answer-box">${K(`\\mathbf{x}^*=(${xs})^{T},\\quad z^*=${t.z.tex()}`)}</div>
+      <p>代回原始约束检查：${PROBLEM.A.map((r,i)=>{const lhs=r.reduce((a,v,j)=>a.add(f(v).mul(x[j])),f(0));return K(`${lhs.tex()}\\le${PROBLEM.b[i]}`)}).join("，")} ✓；与图解法结果一致 ✓；求解器核对见 <code>models/ch01-课件例题验证.py</code> ✓</p></div>
+      <details class="ask"><summary>变式小问题</summary>把目标函数改成 ${K("z=2x_1+4x_2")}（课件第4节示例），最终表里会出现什么不同？这说明什么？</details>`;
+      return s;
+    }
+    if(t.unbounded) return s+` 存在 ${K("\\sigma_k>0")} 且该列全部 ${K("\\le0")} → 无界解。</div>`;
+    s+=` 还有正检验数 → <b>没到最优</b>，把正检验数的非基变量拉进基能让 ${K("z")} 继续增大。</div>
+      <details class="ask"><summary>先想：谁进基？</summary>max 型：选<b>最大正检验数</b>对应的变量。</details>`;
+    return s;
+  }
+  if(phase==="enter"){
+    return `<div class="explain">最大正检验数是 ${K(`\\sigma_{${t.enter+1}}=${t.sig[t.enter].tex()}`)} → ${K(names[t.enter])} <b>进基</b>（蓝色列）。含义：${K(names[t.enter])} 每增加 1，${K("z")} 增加 ${K(t.sig[t.enter].tex())}。</div>
+      <details class="ask"><summary>先想：谁出基？</summary>用 ${K("\\theta")} 最小比值规则：只对进基列中 ${K("a_{ik}>0")} 的行算 ${K("\\bar b_i/a_{ik}")}，取最小的那行。为什么 ${K("a_{ik}\\le0")} 的行不用算？</details>`;
+  }
+  if(phase==="theta"){
+    return `<div class="explain">${K("\\theta=\\min\\{\\bar b_i/a_{ik}\\mid a_{ik}>0\\}")} ${K(`=${t.theta[t.leave].tex()}`)}，在 ${K(names[t.basis[t.leave]])} 所在行 → ${K(names[t.basis[t.leave]])} <b>出基</b>（黄色行）。主元 ${K(`[${t.T[t.leave][t.enter].tex()}]`)}（橙色）。
+      <br>为什么取最小比值：${K(names[t.enter])} 增大时各基变量在减少，最先减到 0 的那个必须出基，否则就会变负、不可行。<br>${K("a_{ik}\\le0")} 的行：${K(names[t.enter])} 增大时该基变量不会减少，不会限制步长。</div>
+      <details class="ask"><summary>先自己做消元，再点「下一步」核对新表</summary>① 主元行 ÷ 主元；② 其他每一行（含检验数行）减去合适倍数的主元行，使进基列变成单位向量；③ 把 ${K("\\mathbf{x_B}")} 列的 ${K(names[t.basis[t.leave]])} 换成 ${K(names[t.enter])}，${K("\\mathbf{c_B}")} 也跟着换。</details>`;
+  }
+}
+
+function renderPlot(ti){
+  const S=280,pad=26,M=PROBLEM.plotMax,sc=(S-2*pad)/M;
+  const X=v=>pad+v*sc, Y=v=>S-pad-v*sc;
+  // 可行域多边形：枚举顶点
+  const lines=PROBLEM.A.map((r,i)=>[r[0],r[1],PROBLEM.b[i]]).concat([[1,0,0],[0,1,0]]);
+  const pts=[];
+  for(let a=0;a<lines.length;a++)for(let b2=a+1;b2<lines.length;b2++){
+    const [a1,b1,c1]=lines[a],[a2,bb2,c2]=lines[b2],det=a1*bb2-a2*b1;if(!det)continue;
+    const x=(c1*bb2-c2*b1)/det,y=(a1*c2-a2*c1)/det;
+    if(x>=-1e-9&&y>=-1e-9&&PROBLEM.A.every((r,i)=>r[0]*x+r[1]*y<=PROBLEM.b[i]+1e-9))pts.push([x,y]);
+  }
+  const cx=pts.reduce((s,p)=>s+p[0],0)/pts.length,cy=pts.reduce((s,p)=>s+p[1],0)/pts.length;
+  pts.sort((p,q)=>Math.atan2(p[1]-cy,p[0]-cx)-Math.atan2(q[1]-cy,q[0]-cx));
+  let s=`<rect x="0" y="0" width="${S}" height="${S}" fill="none"/>`;
+  for(let k=0;k<=M;k++){s+=`<line x1="${X(k)}" y1="${Y(0)}" x2="${X(k)}" y2="${Y(M)}" stroke="var(--line)" stroke-width=".5"/><line x1="${X(0)}" y1="${Y(k)}" x2="${X(M)}" y2="${Y(k)}" stroke="var(--line)" stroke-width=".5"/>`;
+    if(k%2===0)s+=`<text x="${X(k)-3}" y="${S-pad+14}">${k}</text><text x="${pad-16}" y="${Y(k)+4}">${k}</text>`}
+  s+=`<polygon points="${pts.map(p=>X(p[0])+","+Y(p[1])).join(" ")}" fill="var(--accent)" fill-opacity=".18" stroke="var(--accent)" stroke-width="1.5"/>`;
+  PROBLEM.A.forEach(r=>{const i=PROBLEM.A.indexOf(r),bb=PROBLEM.b[i];let p1,p2;
+    if(r[1]===0){p1=[bb/r[0],0];p2=[bb/r[0],M]}else if(r[0]===0){p1=[0,bb/r[1]];p2=[M,bb/r[1]]}else{p1=[0,bb/r[1]];p2=[bb/r[0],0]}
+    s+=`<line x1="${X(p1[0])}" y1="${Y(p1[1])}" x2="${X(p2[0])}" y2="${Y(p2[1])}" stroke="var(--muted)" stroke-width=".8"/>`});
+  s+=`<text x="${X(M)-12}" y="${Y(0)-4}">x₁</text><text x="${X(0)+4}" y="${Y(M)+10}">x₂</text>`;
+  const path=tables.slice(0,ti+1).map(t=>{const x=xval(t);return [x[0].val(),x[1].val()]});
+  if(path.length>1)s+=`<polyline points="${path.map(p=>X(p[0])+","+Y(p[1])).join(" ")}" fill="none" stroke="var(--pivot)" stroke-width="2" stroke-dasharray="5 4"/>`;
+  path.forEach((p,i)=>{const cur=i===path.length-1;s+=`<circle cx="${X(p[0])}" cy="${Y(p[1])}" r="${cur?6:3.5}" fill="${cur?"var(--pivot)":"var(--muted)"}"/>`;
+    if(cur)s+=`<text x="${X(p[0])+8}" y="${Y(p[1])-8}" style="fill:var(--pivot);font-weight:700">(${p[0]}, ${p[1]}) z=${tables[ti].z.str()}</text>`});
+  document.getElementById("plot").innerHTML=s;
+}
+
+let cur=0;
+function render(){
+  const st=steps[cur],t=tables[st.ti];
+  document.getElementById("tabTitle").textContent=`第 ${st.ti+1} 张单纯形表`+(t.optimal?"（最终表）":"");
+  document.getElementById("tableArea").innerHTML=renderTable(t,st.phase);
+  document.getElementById("explain").innerHTML=explainFor(t,st.phase,st.ti);
+  document.getElementById("stepInfo").textContent=`步骤 ${cur+1} / ${steps.length}`;
+  document.getElementById("prev").disabled=cur===0;
+  document.getElementById("next").disabled=cur===steps.length-1;
+  renderPlot(st.ti);
+}
+document.getElementById("next").onclick=()=>{if(cur<steps.length-1){cur++;render()}};
+document.getElementById("prev").onclick=()=>{if(cur>0){cur--;render()}};
+document.getElementById("reset").onclick=()=>{cur=0;render()};
+renderModel();render();
+</script>
+</body>
+</html>
